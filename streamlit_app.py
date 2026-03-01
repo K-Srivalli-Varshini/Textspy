@@ -1,40 +1,29 @@
 import streamlit as st
-import torch
-from transformers import RobertaTokenizer, RobertaForSequenceClassification
+import pandas as pd
 
-st.title("AI vs Human Text Detector")
+# Page title
+st.set_page_config(page_title="My Streamlit App", layout="centered")
 
-# Load model & tokenizer
-@st.cache_resource
-def load_model():
-    tokenizer = RobertaTokenizer.from_pretrained("ai_human_detector")
-    model = RobertaForSequenceClassification.from_pretrained("ai_human_detector")
-    model.eval()
-    return tokenizer, model
+st.title("📊 My First Streamlit App")
+st.write("This app runs on Streamlit Community Cloud")
 
-tokenizer, model = load_model()
+# File upload
+uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
 
-text = st.text_area("Enter text here")
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
 
-if st.button("Check"):
-    if text.strip() == "":
-        st.warning("Please enter some text")
-    else:
-        inputs = tokenizer(
-            text,
-            return_tensors="pt",
-            truncation=True,
-            padding=True,
-            max_length=256
-        )
+    st.success("File uploaded successfully!")
 
-        with torch.no_grad():
-            outputs = model(**inputs)
-            probs = torch.softmax(outputs.logits, dim=1)
-            pred = torch.argmax(probs, dim=1).item()
-            confidence = probs[0][pred].item()
+    st.subheader("Dataset Preview")
+    st.dataframe(df.head())
 
-        label = "AI Generated" if pred == 1 else "Human Written"
+    st.subheader("Dataset Info")
+    st.write("Rows:", df.shape[0])
+    st.write("Columns:", df.shape[1])
 
-        st.success(f"Prediction: {label}")
-        st.info(f"Confidence: {confidence:.2f}")
+    st.subheader("Column Names")
+    st.write(list(df.columns))
+
+else:
+    st.info("Please upload a CSV file to continue.")

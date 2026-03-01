@@ -1,29 +1,57 @@
 import streamlit as st
-import pandas as pd
+import torch
+import numpy as np
+from transformers import RobertaTokenizer, RobertaForSequenceClassification
 
-# Page title
-st.set_page_config(page_title="My Streamlit App", layout="centered")
+st.set_page_config(page_title="AI vs Human Detector", layout="centered")
 
-st.title("📊 My First Streamlit App")
-st.write("This app runs on Streamlit Community Cloud")
+@st.cache_resource
+def load_model():
+    tokenizer = RobertaTokenizer.from_pretrained("model")
+    model = RobertaForSequenceClassification.from_pretrained("model")
+    return tokenizer, model
 
-# File upload
-uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
+tokenizer, model = load_model()
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
+# -------- Extra AI Tool (Perplexity-like score) --------
+def burstiness(text):
+    words = text.split()
+    lengths = [len(w) for w in words]
+    return np.std(lengths)
 
-    st.success("File uploaded successfully!")
+# -------- Prediction --------
+def predict(text):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    probs = torch.softmax(outputs.logits, dim=1)
+    return probs[0][1].item()  # AI probability
 
-    st.subheader("Dataset Preview")
-    st.dataframe(df.head())
+# -------- UI --------
+st.title("🤖 AI vs Human Text Detector")
+st.write("Detect whether text is **Human-written or AI-generated**")
 
-    st.subheader("Dataset Info")
-    st.write("Rows:", df.shape[0])
-    st.write("Columns:", df.shape[1])
+text = st.text_area("Paste your text here:")
 
-    st.subheader("Column Names")
-    st.write(list(df.columns))
+if st.button("Analyze"):
+    if len(text.strip()) < 20:
+        st.warning("Please enter more text")
+    else:
+        ai_score = predict(text)
+        burst = burstiness(text)
 
-else:
-    st.info("Please upload a CSV file to continue.")
+        st.subheader("Results")
+
+        if ai_score > 0.6:
+            st.error("🧠 Likely AI-Generated")
+        else:
+            st.success("👤 Likely Human-Written")
+
+        st.write(f"**AI Probability:** {ai_score:.2f}")
+        st.write(f"**Burstiness Score:** {burst:.2f}")
+
+        st.info("""
+        🔍 **How detection works**
+        - RoBERTa → Deep language patterns  
+        - Burstiness → Humans write unevenly, AI is smoother
+        """)

@@ -3,79 +3,71 @@ import torch
 import numpy as np
 from transformers import RobertaTokenizer, RobertaForSequenceClassification
 
-# ---------------- PAGE SETUP ----------------
-st.set_page_config(
-    page_title="AI vs Human Text Detector",
-    layout="centered"
-)
+st.set_page_config(page_title="AI vs Human Detector", layout="centered")
 
-# ---------------- LOAD MODEL ----------------
 @st.cache_resource
 def load_model():
-    tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+    tokenizer = RobertaTokenizer.from_pretrained(
+        "roberta-base-openai-detector"
+    )
     model = RobertaForSequenceClassification.from_pretrained(
-        "roberta-base",
-        num_labels=2
+        "roberta-base-openai-detector"
     )
     model.eval()
     return tokenizer, model
 
 tokenizer, model = load_model()
 
-# ---------------- EXTRA AI TOOL ----------------
+# -------- Perplexity (REAL) --------
+def perplexity(text):
+    enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+    with torch.no_grad():
+        loss = model(**enc, labels=enc["input_ids"]).loss
+    return torch.exp(loss).item()
+
+# -------- Burstiness --------
 def burstiness(text):
-    words = text.split()
-    if len(words) == 0:
+    sentences = text.split(".")
+    lengths = [len(s.split()) for s in sentences if len(s.strip()) > 0]
+    if len(lengths) < 2:
         return 0.0
-    lengths = [len(word) for word in words]
     return float(np.std(lengths))
 
-# ---------------- PREDICTION ----------------
-def predict_ai(text):
-    inputs = tokenizer(
-        text,
-        return_tensors="pt",
-        truncation=True,
-        padding=True,
-        max_length=256
-    )
-
+# -------- Prediction --------
+def predict(text):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True)
     with torch.no_grad():
-        outputs = model(**inputs)
+        logits = model(**inputs).logits
+    probs = torch.softmax(logits, dim=1)
+    return probs[0][1].item()  # AI probability
 
-    probs = torch.softmax(outputs.logits, dim=1)
-    ai_probability = probs[0][1].item()
-    return ai_probability
-
-# ---------------- UI ----------------
+# -------- UI --------
 st.title("🤖 AI vs Human Text Detector")
-st.write("Detect whether text is **Human-written or AI-generated**")
 
-text_input = st.text_area(
-    "Paste your text here 👇",
-    height=180
-)
+text = st.text_area("Paste text here", height=180)
 
 if st.button("Analyze"):
-    if len(text_input.strip()) < 20:
-        st.warning("Please enter at least 20 characters.")
+    if len(text.strip()) < 40:
+        st.warning("Please enter more text (at least 40 characters)")
     else:
-        ai_score = predict_ai(text_input)
-        burst_score = burstiness(text_input)
+        ai_prob = predict(text)
+        ppl = perplexity(text)
+        burst = burstiness(text)
 
-        st.subheader("🔍 Result")
+        st.subheader("Result")
 
-        if ai_score > 0.6:
+        if ai_prob > 0.5:
             st.error("🧠 Likely AI-Generated")
         else:
             st.success("👤 Likely Human-Written")
 
-        st.write(f"**AI Probability:** {ai_score:.2f}")
-        st.write(f"**Burstiness Score:** {burst_score:.2f}")
+        st.write(f"**AI Probability:** {ai_prob:.2f}")
+        st.write(f"**Perplexity:** {ppl:.2f}")
+        st.write(f"**Burstiness:** {burst:.2f}")
 
         st.info(
-            "How it works:\n"
-            "- RoBERTa checks language patterns\n"
-            "- Burstiness checks writing variation\n"
-            "- AI text is usually smoother"
+            "Explanation:\n"
+            "- Low perplexity → AI-like\n"
+            "- High perplexity → Human-like\n"
+            "- Burstiness checks writing variation"
         )
